@@ -145,13 +145,13 @@ void loop() {
 
   prevDeltaPitch=deltaPitch; prevDeltaYaw=deltaYaw; prevDeltaRoll=deltaRoll;
 
-  //leftServo.write(elevonLeft);
-  //rightServo.write(elevonRight);
-  //rudderServo.write(rudder);
+  leftServo.write(elevonLeft);
+  rightServo.write(elevonRight);
+  rudderServo.write(rudder);
   
   if (currentTime-modTime>recording_clock_speed) {
     pressure = ps.readPressureMillibars();
-    Serial.print('=');
+    Serial.print("          ");
     Serial.print(int(pitch));
     Serial.print(' ');
     Serial.print(int(roll));
