@@ -6,11 +6,12 @@
 
 
 //Control variables
-float recording_clock_speed=500.0; // Interval in ms between recordings of flight data
+float recording_clock_speed=250.0; // Interval in ms between recordings of flight data
 float prediction_time=0.25; // How far ahead the vehicle looks to determine necessary attitude corrections
 
 //Other variables
 float deltaPitch, deltaYaw, deltaRoll, pitch, yaw, roll, rpitch, ryaw, rroll, prevDeltaPitch, prevDeltaYaw, prevDeltaRoll, errorPitch, errorYaw, errorRoll;
+float rawPitch, rawRoll, rawYaw;
 float deltaTime, currentTime, previousTime, modTime;
 float correctionPitch, correctionYaw, correctionRoll, targetPitch, targetYaw, targetRoll, interimTargetPitch;
 float qa0, qa1, qa2, qa3, qb0, qb1, qb2, qb3, qc0, qc1, qc2, qc3;
@@ -41,24 +42,28 @@ void setup() {
   Wire.begin(); // Initialize I2C communication
   Wire.setTimeout(100);
   Serial.begin(19200);               // Initialize comunication
+  Serial.print("0");
   if (!ps.init())
   {
     delay(1);
-    Serial.println("Failed to autodetect pressure sensor!");
+    Serial.print("Failed to autodetect pressure sensor!");
     while (1);
   }
+  Serial.print("a");
   ps.enableDefault();
   Wire.beginTransmission(0x68);       // Start communication with MPU6050 // MPU=0x68
   Wire.write(0x6B);                  // Talk to the register 6B
   Wire.write(0x00);                  // Make reset - place a 0 into the 6B register
   Wire.endTransmission(true); 
   delay(50);
+  Serial.print("b");
   Wire.beginTransmission(0x68);
   Wire.write(0x1B);
   Wire.write(0x02);
   Wire.endTransmission(true);
   delay(20); 
   Serial.print(1);
+  delay(5000); //Delay to allow rocket to stop moving after reset button is pressed
   while (c < 200) {
     Wire.beginTransmission(0x68);
     Wire.write(0x43);
@@ -82,9 +87,9 @@ void setup() {
   yaw=0;
   roll=0;
   groundPressure=ps.readPressureMillibars();
-  lastpressure=0;
   Serial.print("  ");
-  Serial.print(errorPitch);
+  c=
+  c=0;
 }
 
 void Set_quaternion_a(float fpitch, float fyaw, float froll){
@@ -110,11 +115,14 @@ void loop() {
   Wire.write(0x43); // Gyro data first register address 0x43
   delay(10);
   Wire.requestFrom(0x68, 6, true); // Read 4 registers total, each axis value is stored in 2 registers
-  deltaPitch = ((Wire.read() << 8 | Wire.read())/130)-errorPitch;
-  deltaYaw=((Wire.read() << 8 | Wire.read())/130)-errorYaw;
-  deltaRoll=((Wire.read() << 8 | Wire.read())/130)-errorRoll;
+  rawPitch=(Wire.read() << 8 | Wire.read());
+  rawYaw=(Wire.read() << 8 | Wire.read());
+  rawRoll=(Wire.read() << 8 | Wire.read());
+  deltaPitch = (rawPitch/130)-errorPitch;
+  deltaYaw=(rawYaw/130)-errorYaw;
+  deltaRoll=(rawRoll/130)-errorRoll;
+  if (c==0){deltaPitch=0;deltaRoll=0;deltaYaw=0;;c=1;}
   Wire.endTransmission(true);
-  
   // Update attitude data by trapezoidal integration of the gyro outputs
   Set_quaternion_b((deltaPitch+prevDeltaPitch)/2.0*deltaTime/180*PI,(deltaYaw+prevDeltaYaw)/2.0*deltaTime/180*PI,(deltaRoll+prevDeltaRoll)/2.0*deltaTime/180*PI);
   // Multiply Quaternion A and Quaternion B to sum rotations
@@ -123,6 +131,7 @@ void loop() {
   roll=(atan2(2*(qc0*qc1+qc2*qc3),qc0*qc0-qc1*qc1-qc2*qc2+qc3*qc3))*180/PI;
   pitch=(asin(2*(qc0*qc2-qc1*qc3)))*180/PI;
   yaw=(atan2(2*(qc0*qc3+qc2*qc1),qc0*qc0+qc1*qc1-qc2*qc2-qc3*qc3))*180/PI;
+  if (c==0){Serial.print(yaw);c=1;}
   // Determine corrections based on predicted attitude in 0.25 seconds
   correctionPitch=3*(interimTargetPitch-pitch-(deltaPitch*prediction_time));
   correctionYaw=(targetYaw-yaw-(deltaYaw*prediction_time));
@@ -142,23 +151,18 @@ void loop() {
 
   leftServo.write(elevonLeft); rightServo.write(elevonRight); rudderServo.write(rudder);
 
+  if (targetPitchOffset>pitchOffset && correctionPitch>-45){pitch+=1; pitchOffset+=1;}
+  if (targetPitchOffset<pitchOffset && correctionPitch<45){pitch-=1; pitchOffset-=1;}
   
   if (currentTime-modTime>recording_clock_speed) {
+    lastpressure=pressure;
     pressure = ps.readPressureMillibars();
+    if (pressure-groundPressure<-1.5 || p>20){phase=1;}
+    if ((phase==1 && pressure-lastpressure<-1)||p>40) {phase=2; targetPitchOffset=180;}
+    if ((phase==2 && pressure-groundPressure>-3)||p>60) {targetPitchOffset=120;}
     p++;
-
-    //if (phase==0 && p>10){phase=1;targetPitchOffset=180;Serial.print("Phase");}
-    if (targetPitchOffset>pitchOffset && correctionPitch>-30){pitch+=30; pitchOffset+=30;}
-    Serial.print("          ");
-    //Serial.print(correctionPitch);
-    //Serial.print("  ");
-    //Serial.print(pitchOffset);
-    Serial.print(int(pitch));
-    Serial.print(' ');
-    Serial.print(int(roll));
-    Serial.print(" ");
-    Serial.print(int(yaw));
-    //Serial.print(pressure);
+    Serial.print("       ");
+    Serial.print(pitch);
     if (digitalRead(2) == LED_ON) {
       digitalWrite(2, LED_OFF);
     }else{
@@ -167,5 +171,3 @@ void loop() {
     modTime=currentTime;
   }
 }
-
-// put function definitions here:
